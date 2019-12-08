@@ -3,6 +3,11 @@ import * as functions from "firebase-functions";
 // eslint-disable-next-line @typescript-eslint/ban-ts-ignore
 // @ts-ignore
 import * as npo from "npm-offline-packager";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-ignore
+// @ts-ignore
+import { resolvedPackages } from "npm-offline-packager/lib/cache";
+
 import * as tmp from "tmp";
 import * as JSZip from "jszip";
 import * as fs from "fs";
@@ -62,6 +67,8 @@ export const nporesolve = functions
             console.log(user);
             const body = request.body;
             console.log(body);
+
+            resolvedPackages.clean();
 
             const deps = await npo.resolveDependencies(body.manifest, {});
             const ret = JSON.stringify(deps, undefined, 2);
