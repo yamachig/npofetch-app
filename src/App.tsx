@@ -59,12 +59,16 @@ const npofetch = async (manifest: unknown, progress?: (ratio: number, message: s
 
         if (!fetchResponse.ok) {
             const message = await fetchResponse.text();
-            console.error({ dependencies, message });
+            console.error({ dependencies, message, fetchResponse });
             throw new Error(message);
         }
 
         const zipData = await fetchResponse.arrayBuffer();
-        await processDownloadedFile(zipData);
+        try {
+            await processDownloadedFile(zipData);
+        } catch (e) {
+            console.error({ dependencies, zipData: new Blob([zipData], { type: "application/zip" }) });
+        }
     };
 
     for (let i = 0; i < workerCount; i++) {
@@ -118,7 +122,7 @@ const MainView: React.FC = () => {
                 setProgress({ ratio, message });
             });
         } catch (e) {
-            alert(e);
+            console.error(e);
         }
         setFetching(false);
     };

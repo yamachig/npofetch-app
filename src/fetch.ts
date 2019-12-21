@@ -1,7 +1,8 @@
 import firebase from "firebase/app";
 import "firebase/auth";
+import customFetch from "./customFetch";
 
-export default async (input: RequestInfo, init?: RequestInit | undefined) => {
+export const defaultFetch = async (input: RequestInfo, init?: RequestInit | undefined) => {
     const user = firebase.auth().currentUser;
     if (!user) throw new Error("User not authenticated.");
     const token = await user.getIdToken(true);
@@ -13,3 +14,5 @@ export default async (input: RequestInfo, init?: RequestInit | undefined) => {
         },
     });
 };
+
+export default customFetch ?? defaultFetch;
