@@ -3,7 +3,6 @@ module.exports = {
     "eslint:recommended",
     "plugin:@typescript-eslint/recommended",
     "plugin:prettier/recommended",
-    "prettier/@typescript-eslint",
     "plugin:react/recommended",
   ],
   plugins: [
@@ -50,7 +49,9 @@ module.exports = {
     "@typescript-eslint/no-parameter-properties": 0,
     "@typescript-eslint/no-object-literal-type-assertion": 0,
     "no-irregular-whitespace": 0,
-    "@typescript-eslint/camelcase": ["error", {allow: ["_id"]}],
+    "prettier/prettier": ["error", {
+      "endOfLine":"auto",
+    }]
   },
 
   settings: {

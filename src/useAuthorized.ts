@@ -18,7 +18,7 @@ export default () => {
         (async () => {
             firebase.initializeApp(firebaseConfig);
 
-            firebase.auth().onAuthStateChanged(async user => {
+            firebase.auth().onAuthStateChanged(async (user) => {
                 console.log({ user });
                 if (user) {
                     try {

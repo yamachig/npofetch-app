@@ -87,7 +87,7 @@ const npofetch = async (manifest: unknown, progress?: (ratio: number, message: s
 const DownloadStateView: React.FC<{
     ratio: number;
     message: string;
-}> = props => {
+}> = (props) => {
     return (
         <div>
             <div
