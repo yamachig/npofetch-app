@@ -5,7 +5,20 @@ import fetch from "./fetch";
 import FileSaver from "file-saver";
 import JSZip from "jszip";
 
-const NUMBER_IN_WORKER = 20;
+const NUMBER_IN_WORKER = 10;
+
+const aggregateResolved = (obj: Record<string, unknown>): string[] => {
+    if (typeof obj !== "object") return [];
+    const ret: string[] = [];
+    for (const key in obj) {
+        if (key === "resolved" && typeof obj[key] === "string") {
+            ret.push(obj[key] as string);
+        } else {
+            ret.push(...aggregateResolved(obj[key] as Record<string, unknown>));
+        }
+    }
+    return ret;
+};
 
 const npofetch = async (manifest: unknown, progress?: (ratio: number, message: string) => void) => {
     progress?.(0, "依存関係を分析しています…");
@@ -20,7 +33,8 @@ const npofetch = async (manifest: unknown, progress?: (ratio: number, message: s
         throw new Error(await resolveResponse.text());
     }
 
-    const allDependencies: unknown[] = await resolveResponse.json();
+    const lock: Record<string, unknown> = await resolveResponse.json();
+    const urls = aggregateResolved(lock);
 
     progress?.(0, "依存関係の分析が完了しました。");
 
@@ -43,23 +57,23 @@ const npofetch = async (manifest: unknown, progress?: (ratio: number, message: s
             const innerData = await file.async("arraybuffer");
             destZip.file(relativePath, innerData);
             processedCount += 1;
-            progress?.(processedCount / allDependencies.length, relativePath);
+            progress?.(processedCount / urls.length, relativePath);
         }
     };
 
     const workers: Promise<void>[] = [];
-    const workerCount = Math.ceil(allDependencies.length / NUMBER_IN_WORKER);
+    const workerCount = Math.ceil(urls.length / NUMBER_IN_WORKER);
 
-    const createWorker = (dependencies: unknown[]) => async () => {
+    const createWorker = (urls: string[]) => async () => {
         const fetchResponse = await fetch("/npofetch/", {
             method: "post",
-            body: JSON.stringify({ dependencies }),
+            body: JSON.stringify({ urls }),
             headers: { "Content-Type": "application/json" },
         });
 
         if (!fetchResponse.ok) {
             const message = await fetchResponse.text();
-            console.error({ dependencies, message, fetchResponse });
+            console.error({ urls, message, fetchResponse });
             throw new Error(message);
         }
 
@@ -67,16 +81,16 @@ const npofetch = async (manifest: unknown, progress?: (ratio: number, message: s
         try {
             await processDownloadedFile(zipData);
         } catch (e) {
-            console.error({ dependencies, zipData: new Blob([zipData], { type: "application/zip" }) });
+            console.error({ urls, zipData: new Blob([zipData], { type: "application/zip" }) });
         }
     };
 
     for (let i = 0; i < workerCount; i++) {
-        const dependencies = allDependencies.slice(i * NUMBER_IN_WORKER, (i + 1) * NUMBER_IN_WORKER);
-        workers.push(createWorker(dependencies)());
+        const partUrls = urls.slice(i * NUMBER_IN_WORKER, (i + 1) * NUMBER_IN_WORKER);
+        workers.push(createWorker(partUrls)());
     }
 
-    console.log({ total: allDependencies.length, workers, workerCount, NUMBER_IN_WORKER });
+    console.log({ total: urls.length, workers, workerCount, NUMBER_IN_WORKER });
 
     await Promise.all(workers);
 
@@ -148,8 +162,8 @@ const MainView: React.FC = () => {
     ) : (
         <>
             <form onSubmit={onSubmit}>
-                <textarea name="manifest" />
-                <input type="submit" value="送信" />
+                <textarea name="manifest" style={{ width: "100%", height: "20em" }} />
+                <input type="submit" value="送信" className="btn btn-primary" />
             </form>
         </>
     );

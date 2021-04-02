@@ -1,18 +1,14 @@
 import * as functions from "firebase-functions";
-
-// eslint-disable-next-line @typescript-eslint/ban-ts-ignore
-// @ts-ignore
-import * as npo from "npm-offline-packager";
-
-// eslint-disable-next-line @typescript-eslint/ban-ts-ignore
-// @ts-ignore
-import { resolvedPackages } from "npm-offline-packager/lib/cache";
-
 import * as tmp from "tmp";
 import * as JSZip from "jszip";
 import * as fs from "fs";
 import * as path from "path";
 import * as admin from "firebase-admin";
+import { exec } from "child_process";
+import { promisify } from "util";
+import fetch from "node-fetch";
+
+const console = functions.logger;
 
 admin.initializeApp();
 
@@ -50,10 +46,7 @@ const withAuthenticate = (
 export const isAuthorized = functions.https.onRequest(
     withAuthenticate(async (request, response, user) => {
         console.log(user);
-        response
-            .status(200)
-            .contentType("json")
-            .send({ authorized: true });
+        response.status(200).contentType("json").send({ authorized: true });
     }),
 );
 
@@ -64,21 +57,40 @@ export const nporesolve = functions
     })
     .https.onRequest(
         withAuthenticate(async (request, response, user) => {
-            console.log(user);
-            const body = request.body;
-            console.log(body);
+            try {
+                console.log(user);
+                const body = request.body;
 
-            resolvedPackages.clean();
+                const tmpdir = tmp.dirSync();
+                await promisify(fs.writeFile)(path.join(tmpdir.name, "package.json"), JSON.stringify(body.manifest), {
+                    encoding: "utf-8",
+                });
+                await promisify(exec)("npm install --package-lock-only", { cwd: tmpdir.name });
+                const lockJson = await promisify(fs.readFile)(path.join(tmpdir.name, "package-lock.json"), {
+                    encoding: "utf-8",
+                });
+                const lock = JSON.parse(lockJson);
 
-            const deps = await npo.resolveDependencies(body.manifest, {});
-            const ret = JSON.stringify(deps, undefined, 2);
-            console.log(ret);
-            response
-                .status(200)
-                .contentType("json")
-                .send(ret);
+                response.status(200).contentType("json").send(lock);
+            } catch (e) {
+                console.error(e);
+                response.status(500).send(e);
+            }
         }),
     );
+
+const aggregateResolved = (obj: Record<string, unknown>): string[] => {
+    if (typeof obj !== "object") return [];
+    const ret: string[] = [];
+    for (const key in obj) {
+        if (key === "resolved" && typeof obj[key] === "string") {
+            ret.push(obj[key] as string);
+        } else {
+            ret.push(...aggregateResolved(obj[key] as Record<string, unknown>));
+        }
+    }
+    return ret;
+};
 
 export const npofetch = functions
     .runWith({
@@ -87,30 +99,25 @@ export const npofetch = functions
     })
     .https.onRequest(
         withAuthenticate(async (request, response, user) => {
-            console.log(user);
-            const body = request.body;
-            console.log(body);
+            try {
+                console.log(user);
+                const urls = request.body.urls;
 
-            const dependencies = body.dependencies;
-
-            const tmpdir = tmp.dirSync();
-
-            await npo.downloadPackages(dependencies, {
-                destFolder: tmpdir.name,
-            });
-
-            const zip = new JSZip();
-            for (const fileName of fs.readdirSync(tmpdir.name)) {
-                const filePath = path.join(tmpdir.name, fileName);
-                zip.file(fileName, fs.readFileSync(filePath));
-                fs.unlinkSync(filePath);
+                const zip = new JSZip();
+                for (const url of urls) {
+                    const basename = url.split("/").slice(-1)[0];
+                    const mAt = /\/(@[^/]+)\//.exec(url);
+                    const fileName = `${mAt ? mAt[1] + "-" : ""}${basename}`;
+                    console.log(`fetch("${url}")`);
+                    const res = await fetch(url);
+                    const buf = await res.arrayBuffer();
+                    zip.file(fileName, buf);
+                }
+                const buffer = await zip.generateAsync({ type: "nodebuffer" });
+                response.status(200).contentType("application/zip").send(buffer);
+            } catch (e) {
+                console.error(e);
+                response.status(500).send(e);
             }
-            const buffer = await zip.generateAsync({ type: "nodebuffer" });
-            response
-                .status(200)
-                .contentType("application/zip")
-                .send(buffer);
-
-            fs.rmdirSync(tmpdir.name);
         }),
     );
